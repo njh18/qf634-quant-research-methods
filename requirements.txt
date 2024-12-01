@@ -6,3 +6,4 @@ matplotlib
 seaborn
 statsmodels
 scipy
+holidays
