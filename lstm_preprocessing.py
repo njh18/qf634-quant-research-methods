@@ -43,7 +43,11 @@ df_pct_change = filtered_df.iloc[:, 1:-2].pct_change()
 df_pct_change['Date'] = filtered_df['Date']
 # Rearrange the columns to put Date first
 df_pct_change = df_pct_change[['Date'] + [col for col in df_pct_change.columns if col != 'Date']]
-print(df_pct_change)
+
+#handle missing values 
+df_pct_change.drop('XLC', axis=1, inplace=True)
+df_pct_change.dropna(inplace=True)
+
 
 
 
