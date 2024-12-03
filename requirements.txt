@@ -7,3 +7,5 @@ seaborn
 statsmodels
 scipy
 holidays
+tensorflow
+keras-tuner

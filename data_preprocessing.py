@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import os 
 import holidays
+import matplotlib.pyplot as plt
 
 csv_directory = "historical_data" 
 
@@ -24,10 +25,6 @@ df_filtered = combined_df[combined_df['Date'] >= '2018-01-01']
 #Taking a subset of the stocks
 filtered_df = df_filtered.loc[:, ['Date', 'XLB', 'XLC', 'XLE', 'XLF', 'XLI', 'XLK', 'XLP',
        'XLRE', 'XLU', 'XLV', 'XLY', 'ADA-USD', 'BTC-USD', 'XRP-USD']]
-#print(filtered_df)
-print(filtered_df.isnull().sum())
-#see sample of what's null
-print(filtered_df[filtered_df.isnull().any(axis=1)].sample(5))
 
 #Filter out days that are NOT trading days and are Holidays
 us_holidays = holidays.US()
@@ -47,7 +44,35 @@ df_pct_change = df_pct_change[['Date'] + [col for col in df_pct_change.columns i
 #handle missing values 
 df_pct_change.drop('XLC', axis=1, inplace=True)
 df_pct_change.dropna(inplace=True)
+df_pct_change.set_index('Date', inplace=True)
+print(df_pct_change)
+np.save('preprocessed_data.npy', df_pct_change)
 
+## exploratory data analysis 
+#annual returns - assumption 252 trading days
+annual_returns = df_pct_change.mean() * 252 * 100
+annual_returns.values.sort()
 
+num_assets = len(annual_returns)
+
+#random weights
+weights = np.random.random(num_assets)
+weights /= np.sum(weights)
+
+#sanity check - weights sum to 1
+weights.sum()
+
+#mean annual returns
+np.sum(weights * df_pct_change.mean()) * 252
+
+#annual variance
+np.dot(weights.T, np.dot(df_pct_change.cov() * 252, weights))
+
+#annual covariance
+np.sqrt(np.dot(weights.T,np.dot(df_pct_change.cov() * 252, weights)))
+
+#correlation matrix
+corr_matrix = df_pct_change.corr()
+print(corr_matrix)
 
 
