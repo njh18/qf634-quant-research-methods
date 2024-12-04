@@ -45,8 +45,8 @@ df_pct_change = df_pct_change[['Date'] + [col for col in df_pct_change.columns i
 df_pct_change.drop('XLC', axis=1, inplace=True)
 df_pct_change.dropna(inplace=True)
 df_pct_change.set_index('Date', inplace=True)
-print(df_pct_change)
-np.save('preprocessed_data.npy', df_pct_change)
+# print(df_pct_change)
+df_pct_change.to_pickle('df_pct_change.pkl')
 
 ## exploratory data analysis 
 #annual returns - assumption 252 trading days
@@ -73,6 +73,6 @@ np.sqrt(np.dot(weights.T,np.dot(df_pct_change.cov() * 252, weights)))
 
 #correlation matrix
 corr_matrix = df_pct_change.corr()
-print(corr_matrix)
+# print(corr_matrix)
 
 
