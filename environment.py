@@ -29,7 +29,7 @@ class Environment:
         df_filtered = df_filtered.drop(columns=["index"])
 
         # get pct returns
-        return_df = df.drop(columns=['Date']).pct_change()
+        return_df = df_filtered.drop(columns=['Date']).pct_change() * 100
         return_df.dropna(inplace=True)
 
         return return_df
