@@ -42,6 +42,7 @@ def split_test(split, X, y):
 X = np.asarray([filtered_data.iloc[i - 1:i, 0].values for i in range(1, len(filtered_data))])
 y = np.asarray([filtered_data.iloc[i, 0] for i in range(1, len(filtered_data))])
 
+# split 80-20
 split = 0.8
 
 X_train, y_train = split_train(split, X, y)
@@ -91,11 +92,12 @@ model.summary()
 
 predict_train_model = model.predict(X_train_scaled)
 predict_test_model = model.predict(X_test_scaled)
-print(predict_train_model.shape)
-#(400,1)
-print(predict_test_model.shape)
+
 predict_train_model=predict_train_model[:, 0]
 predict_test_model=predict_test_model[:, 0]
+
+print(predict_train_model.shape)
+print(predict_test_model.shape)
 
 predict_stock_price = model.predict(X_test_scaled)
 predict_stock_price = predict_stock_price[:, 0]
@@ -110,7 +112,7 @@ train_rmse = math.sqrt(mean_squared_error(actual_train_price, pred_train_price))
 print(test_rmse)
 print(train_rmse)
 
-plt.plot(actual_test_price, label="Actual Price",linestyle='--') ### from observation 60 to 226 till 28 Nov 2024
+plt.plot(actual_test_price, label="Actual Price",linestyle='--') 
 plt.plot(pred_test_price,label="Predicted Price",linestyle='-')
 plt.title('Stock Price Prediction from 2021 to 2022')
 plt.xlabel('Time')
