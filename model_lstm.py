@@ -17,33 +17,32 @@ from keras_tuner.tuners import RandomSearch
 
 
 # split the data into training and testing
-def split_train(split, X, y):
-  split = int(split * len(X))
-  X_train = X[:split]
-  Y_train = y[:split]
+def split_train(holding_period, X, y):
+  X_train = X[:-holding_period]
+  Y_train = y[:-holding_period]
   return X_train, Y_train
 
-def split_test(split, X, y):
-  split = int(split * len(X))
-  X_test = X[split:]
-  Y_test = y[split:]
+def split_test(holding_period, X, y):
+  X_test = X[-holding_period:]
+  Y_test = y[-holding_period:]
   return X_test, Y_test
 
 #define main function to run the model
-def main(filtered_data):
+def main(filtered_data, holding_period):
 
   results = {}
+  rmse_score = {}
+  predicted_prices = {}
+  actual_prices = {}
 
   for stock in filtered_data.columns:
     print(f"Training model for stock: {stock}")
     X = np.asarray([filtered_data.iloc[i - 1:i, filtered_data.columns.get_loc(stock)].values for i in range(1, len(filtered_data))])
     y = np.asarray([filtered_data.iloc[i, filtered_data.columns.get_loc(stock)] for i in range(1, len(filtered_data))])
 
-    # split 80-20
-    split = 0.8
 
-    X_train, y_train = split_train(split, X, y)
-    X_test, y_test = split_test(split, X, y)
+    X_train, y_train = split_train(holding_period, X, y)
+    X_test, y_test = split_test(holding_period, X, y)
     print(f'X_train: {X_train.shape} | Y_train: {y_train.shape}')
     print(f'X_test: {X_test.shape}   | Y_test: {y_test.shape}')
 
@@ -83,31 +82,26 @@ def main(filtered_data):
     model.compile(optimizer='adam', loss='mean_squared_error')
 
     ## train lstm model on training set using RNN
-    model.fit(X_train_scaled, Y_train_scaled, epochs=100, batch_size=10)
+    model.fit(X_train_scaled, Y_train_scaled, epochs=100, batch_size=10, verbose = 0)
 
     model.summary()
 
+    # check RSME for train model
     predict_train_model = model.predict(X_train_scaled)
-    predict_test_model = model.predict(X_test_scaled)
-
     predict_train_model=predict_train_model[:, 0]
-    predict_test_model=predict_test_model[:, 0]
-
-    print(predict_train_model.shape)
-    print(predict_test_model.shape)
-
-    predict_stock_price = model.predict(X_test_scaled)
-    predict_stock_price = predict_stock_price[:, 0]
-
-    pred_test_price = scaler_Y.inverse_transform(predict_stock_price.reshape(-1, 1))
-    actual_test_price = scaler_Y.inverse_transform(Y_test_scaled)
-    test_rmse = math.sqrt(mean_squared_error(actual_test_price, pred_test_price))
-
     pred_train_price = scaler_Y.inverse_transform(predict_train_model.reshape(-1, 1))
     actual_train_price = scaler_Y.inverse_transform(Y_train_scaled)
     train_rmse = math.sqrt(mean_squared_error(actual_train_price, pred_train_price))
-    print(test_rmse)
-    print(train_rmse)
+    print(f"Stock:{stock} train_rmse: {train_rmse}")
+
+    # for test
+    predict_stock_price = model.predict(X_test_scaled)
+    predict_stock_price = predict_stock_price[:, 0]
+    pred_test_price = scaler_Y.inverse_transform(predict_stock_price.reshape(-1, 1))
+    actual_test_price = scaler_Y.inverse_transform(Y_test_scaled)
+    test_rmse = math.sqrt(mean_squared_error(actual_test_price, pred_test_price))
+    print(f"Stock:{stock} test_rmse: {test_rmse}")
+
     results[stock] = {
           'stock': stock,
           'train_rmse': train_rmse,
@@ -115,7 +109,15 @@ def main(filtered_data):
           'pred_test_price': pred_test_price,
           'actual_test_price': actual_test_price
       }
-  return results
+    
+    rmse_score[stock] = {
+        'train_rmse': train_rmse,
+        'test_rmse': test_rmse,
+    }
+    predicted_prices[stock] = [i[0] for i in pred_test_price]
+    actual_prices[stock] = [i[0] for i in actual_test_price]
+
+  return results, pd.DataFrame.from_dict(rmse_score, orient='index'), pd.DataFrame(predicted_prices), pd.DataFrame(actual_prices)
 
 if __name__ == '__main__':
   ## data preparation 
@@ -128,7 +130,8 @@ if __name__ == '__main__':
   filtered_data = filtered_data.dropna()
 
   filtered_data = filtered_data.drop(columns=['Date'])
-  model_results = main(filtered_data)
+  holding_period = int(0.2 * len(filtered_data))
+  model_results,_,_,_ = main(filtered_data,holding_period)
   print(model_results)
 
   # Number of stocks
