@@ -1,8 +1,10 @@
+from environment import Environment
 import numpy as np
 import pandas as pd
 import os 
 import holidays
 import matplotlib.pyplot as plt
+
 
 csv_directory = "historical_data" 
 
@@ -33,6 +35,9 @@ filtered_df['Day'] = filtered_df['Date'].dt.day_name()
 filtered_df = filtered_df.loc[filtered_df['Holiday'] == False]
 filtered_df = filtered_df.loc[~filtered_df.Day.isin(['Saturday', 'Sunday'])]
 
+df_price = filtered_df.copy()
+df_price.drop(['XLC', 'Holiday', 'Day'], axis=1, inplace=True)
+df_price.to_csv('df_price.csv', index=False)
 
 #calculate the percentage change row wise
 df_pct_change = filtered_df.iloc[:, 1:-2].pct_change()
@@ -45,34 +50,8 @@ df_pct_change = df_pct_change[['Date'] + [col for col in df_pct_change.columns i
 df_pct_change.drop('XLC', axis=1, inplace=True)
 df_pct_change.dropna(inplace=True)
 df_pct_change.set_index('Date', inplace=True)
-# print(df_pct_change)
-df_pct_change.to_pickle('df_pct_change.pkl')
+df_pct_change.to_csv('df_pct_change.csv', index=True)
 
-## exploratory data analysis 
-#annual returns - assumption 252 trading days
-annual_returns = df_pct_change.mean() * 252 * 100
-annual_returns.values.sort()
 
-num_assets = len(annual_returns)
-
-#random weights
-weights = np.random.random(num_assets)
-weights /= np.sum(weights)
-
-#sanity check - weights sum to 1
-weights.sum()
-
-#mean annual returns
-np.sum(weights * df_pct_change.mean()) * 252
-
-#annual variance
-np.dot(weights.T, np.dot(df_pct_change.cov() * 252, weights))
-
-#annual covariance
-np.sqrt(np.dot(weights.T,np.dot(df_pct_change.cov() * 252, weights)))
-
-#correlation matrix
-corr_matrix = df_pct_change.corr()
-# print(corr_matrix)
 
 
