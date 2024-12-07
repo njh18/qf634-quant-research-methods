@@ -1,6 +1,5 @@
 import numpy as np
 
-
 def get_stats(daily_returns: list) -> dict:
     if daily_returns is None:
         raise ValueError("Missing Daily returns!")
