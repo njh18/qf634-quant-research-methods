@@ -1,5 +1,8 @@
 import numpy as np
-from scipy.optimize import minimize
+from scipy.optimize import minimize, Bounds, LinearConstraint
+import pandas as pd
+from statsmodels.tsa.arima.model import ARIMA
+
 class MinVarianceMethod:
     
     def __init__(
@@ -10,44 +13,32 @@ class MinVarianceMethod:
 
     
     def get_optimal_weights(self, returns):
-        
-        def objective_function(weights, cov_matrix):
-            # trying to minimize variance
-            return np.dot(weights.T, np.dot(cov_matrix, weights))
-            
-        cov_matrix = returns.cov()
+        cov_matrix = returns.cov() * 252
         num_assets = len(returns.columns)
-        print(f"Num of assets {num_assets}")
-        if self.allow_short:
-            bnds = [(-1, 1) for _ in range(num_assets)]
-            cons =({'type': 'eq', 'fun': lambda x : 1.0 - np.sum(np.abs(x))})
-        else:
-            bnds = [(0, 1) for _ in range(num_assets)]
-            cons =({'type': 'eq', 'fun': lambda x : 1.0 - np.sum(x)})
-        
 
+        if self.allow_short:
+            bounds = Bounds(-1,1)
+        else:
+            bounds = Bounds(0, 1)
+
+        constraints = LinearConstraint(np.ones((num_assets), dtype=int),1,1) 
         initial_weights = np.ones(num_assets) / num_assets 
+    
+        portfvola = lambda w: np.sqrt(np.dot(w,np.dot(w,cov_matrix)))
+
         opt_S = minimize(
-            fun=objective_function,
+            fun=portfvola,
             x0=initial_weights,
-            args=(cov_matrix,),
-            method='SLSQP',
-            constraints=cons,
-            bounds=bnds
+            method='trust-constr',
+            constraints=constraints,
+            bounds=bounds
         )
 
         if not opt_S.success:
             raise ValueError(f"Optimization failed: {opt_S.message}")
 
         optimal_weights = opt_S.x
-        
-        # sometimes optimization fails with constraints, need to be fixed by hands
-        if self.allow_short:
-            optimal_weights /= sum(np.abs(optimal_weights))
-        else:
-            optimal_weights += np.abs(np.min(optimal_weights))
-            optimal_weights /= sum(optimal_weights)
-        
+        assert np.sum(np.array(optimal_weights)).round() == 1 
         return optimal_weights
     
 
@@ -61,51 +52,52 @@ class MaxSharpeMethod:
 
     
     def get_optimal_weights(self, returns):
-    
-        sharpe_ratio_list = []
-        def objective_function(weights, cov_matrix):
-            portfolio_return = np.dot(weights, expected_returns)
-            portfolio_std = np.sqrt(np.dot(weights.T, np.dot(cov_matrix, weights)))
+        expected_returns = returns.mean() * 252
+        cov_matrix = returns.cov() * 252
+        num_assets = len(returns.columns)
 
-            # avoid divide by zero
-            if portfolio_std == 0:
-                return 1e6 
-            sharpe_ratio = (portfolio_return - risk_free_rate) / portfolio_std
-            sharpe_ratio_list.append(sharpe_ratio)
-            return -sharpe_ratio
-            
-        risk_free_rate = 0
-        expected_returns = returns.mean()
-        cov_matrix = returns.cov()
-        num_assets = len(expected_returns)
+        invSharpe = lambda w: np.sqrt(np.dot(w,np.dot(w,cov_matrix)))/expected_returns.dot(w)
+        constraints = LinearConstraint(np.ones((num_assets), dtype=int),1,1) 
+        initial_weights = np.ones(num_assets) / num_assets 
         
         if self.allow_short:
-            bnds = [(-1, 1) for _ in range(num_assets)]
-            cons =({'type': 'eq', 'fun': lambda x : 1.0 - np.sum(np.abs(x))})
+            bounds = Bounds(-1,1)
         else:
-            bnds = [(0, 1) for _ in range(num_assets)]
-            cons =({'type': 'eq', 'fun': lambda x : 1.0 - np.sum(x)})
-        
+            bounds = Bounds(0, 1)
 
-        initial_weights = np.ones(num_assets) / num_assets 
         opt_S = minimize(
-            fun=objective_function,
+            fun=invSharpe,
             x0=initial_weights,
-            args=(cov_matrix,),
-            method='SLSQP',
-            constraints=cons,
-            bounds=bnds
+            method='trust-constr',
+            constraints=constraints,
+            bounds=bounds
         )
 
         if not opt_S.success:
             raise ValueError(f"Optimization failed: {opt_S.message}")
 
-        optimal_weights = opt_S.x
-        
-        if self.allow_short:
-            optimal_weights /= sum(np.abs(optimal_weights))
-        else:
-            optimal_weights += np.abs(np.min(optimal_weights))
-            optimal_weights /= sum(optimal_weights)
-        
+        optimal_weights = opt_S.x        
+        assert np.sum(np.array(optimal_weights)).round() == 1 
         return optimal_weights
+    
+class ArimaModel:
+    def __init__(
+                    self, 
+                    allow_short = False,
+                ):
+        self.allow_short = allow_short
+    
+    def get_optimal_weights(self, returns, holding_period):
+
+        forecasted_returns = {}
+        for asset in returns.columns:
+            model = ARIMA(returns[asset], order=(1, 0, 1))
+            fitted_model = model.fit()
+            forecast = fitted_model.forecast(steps=holding_period)
+            forecasted_returns[asset] = forecast.values 
+        
+        # combine data into forecast_df
+        forecast_df = pd.DataFrame(forecasted_returns)
+        print(forecast_df)
+        minVarMethod = MinVarianceMethod(allow_short=self.allow_short)
+        return minVarMethod.get_optimal_weights(forecast_df)
