@@ -14,6 +14,7 @@ class Environment:
     def load_returns(self):
         df = self.data
         df['Date'] = pd.to_datetime(df['Date'])
+        df = df.drop(columns=['USDT-USD','XLC'])
 
         # Find the earliest date for each column where values are not NaN
         earliest_dates = {
