@@ -28,13 +28,14 @@ def calculate_sharpe_ratio(daily_returns: list, risk_free_rate: float, trading_d
     return excess_returns.mean() / excess_returns.std()
 
 def calculate_maximum_drawdown(daily_returns: list) -> float:
-    cumulative_returns = np.array(daily_returns).cumsum()
+    print("UPDATED returns")
+    cumulative_returns = cumulative_pct_change(daily_returns)
     running_max = np.maximum.accumulate(cumulative_returns)
     drawdowns = (running_max - cumulative_returns) / running_max
     return drawdowns.max()
 
 def calculate_value_at_risk(daily_returns: list, confidence_level=0.95):
-    return -np.percentile(daily_returns, 100 * (1 - confidence_level))
+    return -np.percentile(daily_returns, 100 * (1 - confidence_level), method='nearest')
 
 def cumulative_pct_change(daily_returns: list) -> list:
     cum_pct_change = (1 + np.array(daily_returns) / 100).cumprod() - 1 
