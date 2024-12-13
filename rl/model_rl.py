@@ -99,6 +99,8 @@ class RLEnvironment():
             np.seterr(all='raise')  
             # This will raise exceptions for all warnings
             try:
+                # Code that might trigger a NumPy warning
+                # For example, performing an invalid operation
                 return (action - w_min) / w_sum
             except Exception as e:
                 print(f"{e}\nw_sum={w_sum}\n{action}")
@@ -154,7 +156,7 @@ class RLAgent():
         # Q estimator: NN model that generates Q. Q is a map of state -> action-values. Each value is a numpy array of length nA.
         self.q_estimator = None
 
-    def uni_policy(self):
+    def uni_policy(self, n_asset):
         """
         Creates a policy function w/ output action of same asset weights.
         
@@ -164,7 +166,7 @@ class RLAgent():
         Returns:
             A function that takes an observation as input and returns a vector of action probabilities
         """
-        A = np.ones(self.n_action, dtype=float) / self.n_action
+        A = np.ones(n_asset, dtype=float) / n_asset
         def policy_func(state):
             return A
         return policy_func
@@ -239,7 +241,7 @@ class RLAgent():
         # The policy we're following
         policy = self.epsilon_greedy_policy()
         # Benchmark policy (equal weights)
-        policy_bm = self.uni_policy()
+        policy_bm = self.uni_policy(env.n_asset)
 
         # The replay memory
         replay_memory = []
@@ -346,7 +348,7 @@ class RLAgent():
         # The policy we're following
         policy = self.epsilon_greedy_policy()
         # Benchmark policy (equal weights)
-        policy_bm = self.uni_policy()
+        policy_bm = self.uni_policy(env.n_asset)
 
         for t in itertools.count():
             
