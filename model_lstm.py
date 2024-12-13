@@ -1,110 +1,177 @@
+"""
+LSTM Model Training using price of stocks 
+"""
+
 import pandas as pd 
 import numpy as np
 import matplotlib.pyplot as plt
-
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics import mean_squared_error
+import math
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.layers import Dense, Dropout, LSTM, Activation, Input
-from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, TensorBoard
-from keras_tuner.engine.hyperparameters import HyperParameters
 from keras_tuner.tuners import RandomSearch
 
-## data preparation 
-# read pickle file
-data = pd.read_pickle('df_pct_change.pkl')
-print(data.head())
 
 # split the data into training and testing
-def split_train(split, X, y):
-  split = int(split * len(X))
-  X_train = X[:split]
-  Y_train = y[:split]
+def split_train(holding_period, X, y):
+  X_train = X[:-holding_period]
+  Y_train = y[:-holding_period]
   return X_train, Y_train
 
-def split_test(split, X, y):
-  split = int(split * len(X))
-  X_test = X[split:]
-  Y_test = y[split:]
+def split_test(holding_period, X, y):
+  X_test = X[-holding_period:]
+  Y_test = y[-holding_period:]
   return X_test, Y_test
 
-X = np.asarray([data.iloc[i - 1:i, 0].values for i in range(1, len(data))])
-y = np.asarray([data.iloc[i, 0] for i in range(1, len(data))])
+#define main function to run the model
+def main(filtered_data, holding_period):
 
-split = 0.8
+  results = {}
+  rmse_score = {}
+  predicted_prices = {}
+  actual_prices = {}
 
-X_train, y_train = split_train(split, X, y)
-X_test, y_test = split_test(split, X, y)
-# print(f'X_train: {X_train.shape} | Y_train: {y_train.shape}')
-# print(f'X_test: {X_test.shape}   | Y_test: {y_test.shape}')
+  for stock in filtered_data.columns:
+    print(f"Training model for stock: {stock}")
+    X = np.asarray([filtered_data.iloc[i - 1:i, filtered_data.columns.get_loc(stock)].values for i in range(1, len(filtered_data))])
+    y = np.asarray([filtered_data.iloc[i, filtered_data.columns.get_loc(stock)] for i in range(1, len(filtered_data))])
 
-## reshaping the data for lstm model - 3D   
-X_train = np.reshape(X_train, (X_train.shape[0], X_train.shape[1], 1))
-X_test = np.reshape(X_test, (X_test.shape[0], X_test.shape[1], 1))
-# print(f'X_train: {X_train.shape} | Y_train: {y_train.shape}')
-# print(f'X_test: {X_test.shape}   | Y_test: {y_test.shape}')
 
-## lstm model building
-def build_model(hp):
+    X_train, y_train = split_train(holding_period, X, y)
+    X_test, y_test = split_test(holding_period, X, y)
+    print(f'X_train: {X_train.shape} | Y_train: {y_train.shape}')
+    print(f'X_test: {X_test.shape}   | Y_test: {y_test.shape}')
+
+    ## feature scaling 
+    # split into X and Y to prevent data leakage 
+    scaler_X = MinMaxScaler(feature_range=(0,1))
+    scaler_Y = MinMaxScaler(feature_range=(0,1))
+
+    X_train_scaled = scaler_X.fit_transform(X_train)
+    Y_train_scaled = scaler_Y.fit_transform(y_train.reshape(-1, 1))
+
+    X_test_scaled = scaler_X.transform(X_test)
+    Y_test_scaled = scaler_Y.transform(y_test.reshape(-1, 1))
+
+    # reshape into 3D for for lstm model
+    X_train_scaled = np.reshape(X_train_scaled, (X_train_scaled.shape[0], X_train_scaled.shape[1], 1))
+    X_test_scaled = np.reshape(X_test_scaled, (X_test_scaled.shape[0], X_test_scaled.shape[1], 1))
+
+    ## lstm model building
+    # initialize RNN
     model = Sequential()
-    #TODO : add layers to the model?
-    model.add(LSTM(units=hp.Int('units', min_value=32, max_value=512, step=32), input_shape=(X_train.shape[1], X_train.shape[2]), return_sequences=True))
-    model.add(Dropout(hp.Float('dropout', min_value=0.2, max_value=0.5, step=0.1)))
-    model.add(LSTM(units=hp.Int('units', min_value=32, max_value=512, step=32), return_sequences=False))
-    model.add(Dropout(hp.Float('dropout', min_value=0.2, max_value=0.5, step=0.1)))
+    # first layer
+    model.add(LSTM(units=50, return_sequences=True, input_shape=(X_train_scaled.shape[1], 1)))
+    model.add(Dropout(0.2))
+    # second layer
+    model.add(LSTM(units=50, return_sequences=True))
+    model.add(Dropout(0.2))
+    # third layer
+    model.add(LSTM(units=50, return_sequences=True))
+    model.add(Dropout(0.2))
+    # fourth layer
+    model.add(LSTM(units=50))
+    model.add(Dropout(0.2))
+    # output layer
     model.add(Dense(1))
-    model.add(Activation('linear'))
-    model.compile(optimizer=Adam(learning_rate=hp.Choice('learning_rate', values=[1e-2, 1e-3, 1e-4])),
-                  loss='mean_squared_error')
-    return model
+    # compile RNN
+    model.compile(optimizer='adam', loss='mean_squared_error')
 
-## random search for optimal hyperparameters values 
-tuner = RandomSearch(
-    build_model,
-    objective='val_loss',
-    max_trials=5,
-    executions_per_trial=3,
-    directory='lstm',
-    project_name='stock_price_prediction'
-)
+    ## train lstm model on training set using RNN
+    model.fit(X_train_scaled, Y_train_scaled, epochs=100, batch_size=10, verbose = 0)
 
-tuner.search(X_train, y_train, epochs=10, validation_data=(X_test, y_test))
-best_hyperparam = tuner.get_best_hyperparameters(num_trials=1)[0]
-# print(best_hyperparam.values)
-# print(f"Best neurons: {best_hyperparam.get('units')}")
-# print(f"Best drop_rate: {best_hyperparam.get('dropout')}")
-# print(f"Best learning rate: {best_hyperparam.get('learning_rate')}")
+    model.summary()
 
-tuner.results_summary()
+    # check RSME for train model
+    predict_train_model = model.predict(X_train_scaled)
+    predict_train_model=predict_train_model[:, 0]
+    pred_train_price = scaler_Y.inverse_transform(predict_train_model.reshape(-1, 1))
+    actual_train_price = scaler_Y.inverse_transform(Y_train_scaled)
+    train_rmse = math.sqrt(mean_squared_error(actual_train_price, pred_train_price))
+    print(f"Stock:{stock} train_rmse: {train_rmse}")
 
-lstm_model = build_model(best_hyperparam)
+    # for test
+    predict_stock_price = model.predict(X_test_scaled)
+    predict_stock_price = predict_stock_price[:, 0]
+    pred_test_price = scaler_Y.inverse_transform(predict_stock_price.reshape(-1, 1))
+    actual_test_price = scaler_Y.inverse_transform(Y_test_scaled)
+    test_rmse = math.sqrt(mean_squared_error(actual_test_price, pred_test_price))
+    print(f"Stock:{stock} test_rmse: {test_rmse}")
 
-## train lstm model on training set 
-history = lstm_model.fit(X_train, y_train, epochs=30, batch_size=64, validation_data=(X_test, y_test), verbose=1)
+    results[stock] = {
+          'stock': stock,
+          'train_rmse': train_rmse,
+          'test_rmse': test_rmse,
+          'pred_test_price': pred_test_price,
+          'actual_test_price': actual_test_price
+      }
+    
+    rmse_score[stock] = {
+        'train_rmse': train_rmse,
+        'test_rmse': test_rmse,
+    }
+    predicted_prices[stock] = [i[0] for i in pred_test_price]
+    actual_prices[stock] = [i[0] for i in actual_test_price]
 
-predicted_stock_price = lstm_model.predict(X)
-# print(predicted_stock_price)
+  return results, pd.DataFrame.from_dict(rmse_score, orient='index'), pd.DataFrame(predicted_prices), pd.DataFrame(actual_prices)
 
-pred_val = [predicted_stock_price[i][0] for i in range(0, len(predicted_stock_price))]
+if __name__ == '__main__':
+  ## data preparation 
+  data = pd.read_csv('df_price.csv')
+  print(data.head())
+  # set date range
+  filtered_data = data[(data['Date'] > '2021-01-01') 
+      & (data['Date'] < '2022-12-31')]
 
-close_pred = pd.DataFrame({
-   'Close': data.iloc[1:, 0].values,
-    'Predictions': pred_val
-    }, index = data.index[1:])
+  filtered_data = filtered_data.dropna()
 
+  filtered_data = filtered_data.drop(columns=['Date'])
+  holding_period = int(0.2 * len(filtered_data))
+  model_results,rsme, _, _ = main(filtered_data,holding_period)
+  # print(model_results)
+  print(rsme)
 
-plt.figure(figsize=(10, 6))
-plt.plot(close_pred.index, close_pred['Close'], label='True Values', color='blue')
-plt.plot(close_pred.index, close_pred['Predictions'], label='Predicted Values', color='orange')
-plt.title('True vs Predicted Stock Prices')
-plt.xlabel('Date')
-plt.ylabel('Stock Price')
-plt.legend()
-plt.grid(True)
-plt.show()
-
-
-
+  rsme.to_csv("rsme_results")
+  # Number of stocks
+  num_stocks = len(model_results)
 
 
+  num_stocks = len(model_results)
+  num_cols = 2
+  num_rows = math.ceil(num_stocks / num_cols)
+
+  # Create subplots with the calculated rows and columns
+  fig, axes = plt.subplots(num_rows, num_cols, figsize=(12, num_rows * 4))
+  axes = axes.flatten()  # Flatten the axes array for easy indexing
+
+  # Plot each stock's actual and predicted prices in a subplot
+  for i, (stock, data) in enumerate(model_results.items()):
+      ax = axes[i]  # Get the current subplot
+      ax.plot(data['actual_test_price'], label=f"{stock} Actual Price", linestyle='--')
+      ax.plot(data['pred_test_price'], label=f"{stock} Predicted Price", linestyle='-')
+      ax.set_title(f"{stock} Price Prediction (2021-2022)")
+      ax.set_xlabel('Time')
+      ax.set_ylabel('Price in $')
+      ax.legend()
+
+  # Hide any unused subplots
+  for j in range(len(axes)):
+      if j >= num_stocks:
+          axes[j].axis('off')
+
+  plt.tight_layout()
+  # Show the plot
+  plt.savefig('stock_predictions.png', dpi=300, bbox_inches='tight')
+'''
+  plt.plot(actual_test_price, label="Actual Price",linestyle='--') 
+  plt.plot(pred_test_price,label="Predicted Price",linestyle='-')
+  plt.title('Stock Price Prediction from 2021 to 2022')
+  plt.xlabel('Time')
+  plt.ylabel('Price in $')
+  plt.legend()
+  plt.show()
+'''

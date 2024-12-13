@@ -1,10 +1,7 @@
-from environment import Environment
 import numpy as np
 import pandas as pd
 import os 
 import holidays
-import matplotlib.pyplot as plt
-
 
 csv_directory = "historical_data" 
 
@@ -27,6 +24,10 @@ df_filtered = combined_df[combined_df['Date'] >= '2018-01-01']
 #Taking a subset of the stocks
 filtered_df = df_filtered.loc[:, ['Date', 'XLB', 'XLC', 'XLE', 'XLF', 'XLI', 'XLK', 'XLP',
        'XLRE', 'XLU', 'XLV', 'XLY', 'ADA-USD', 'BTC-USD', 'XRP-USD']]
+#print(filtered_df)
+print(filtered_df.isnull().sum())
+#see sample of what's null
+print(filtered_df[filtered_df.isnull().any(axis=1)].sample(5))
 
 #Filter out days that are NOT trading days and are Holidays
 us_holidays = holidays.US()
@@ -35,9 +36,6 @@ filtered_df['Day'] = filtered_df['Date'].dt.day_name()
 filtered_df = filtered_df.loc[filtered_df['Holiday'] == False]
 filtered_df = filtered_df.loc[~filtered_df.Day.isin(['Saturday', 'Sunday'])]
 
-df_price = filtered_df.copy()
-df_price.drop(['XLC', 'Holiday', 'Day'], axis=1, inplace=True)
-df_price.to_csv('df_price.csv', index=False)
 
 #calculate the percentage change row wise
 df_pct_change = filtered_df.iloc[:, 1:-2].pct_change()
@@ -45,13 +43,7 @@ df_pct_change = filtered_df.iloc[:, 1:-2].pct_change()
 df_pct_change['Date'] = filtered_df['Date']
 # Rearrange the columns to put Date first
 df_pct_change = df_pct_change[['Date'] + [col for col in df_pct_change.columns if col != 'Date']]
+print(df_pct_change)
 
-#handle missing values 
-df_pct_change.drop('XLC', axis=1, inplace=True)
-df_pct_change.dropna(inplace=True)
-df_pct_change.set_index('Date', inplace=True)
-df_pct_change.to_csv('df_pct_change.csv', index=True)
-
-
-
+print(filtered_df)
 

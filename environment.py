@@ -3,40 +3,25 @@ import pandas as pd
 
 class Environment:
 
-    def __init__(self, filename = "combined_adj_close.csv"):
-        self.data = self.load_data(filename)
-        self.returns = self.load_returns()
-
-    
-    def load_data(self, filename):
-        return pd.read_csv(filename)
+    def __init__(self):
+        self.prices = self.load_prices(); 
+        self.returns = self.load_returns();
 
     def load_returns(self):
-        df = self.data
-        df['Date'] = pd.to_datetime(df['Date'])
+        df = self.prices.pct_change()
+        df = df.dropna()
+        return df * 100;
 
-        # Find the earliest date for each column where values are not NaN
-        earliest_dates = {
-            col: df.loc[df[col].notna(), 'Date'].min() for col in df.columns if col != 'Date'
-        }
-        date_df = pd.Series(earliest_dates, name='Earliest Date')
+    def load_prices(self):
+        df = pd.read_csv("df_price.csv")
+        df = df.drop(columns=["Date"])
+        df = df.dropna()
+        return df
 
-        df_filtered = df[df['Date'] >= date_df.max()] 
+    def get_state(self, end, lookback) -> pd.DataFrame:
+        assert lookback <= end
+        return self.returns.iloc[end-lookback:end] 
 
-        # drop all na and remove indexing
-        df_filtered.reset_index(inplace=True)
-        df_filtered.dropna(axis=0, inplace=True)
-        df_filtered = df_filtered.drop(columns=["index"])
-
-        # get pct returns
-        return_df = df.drop(columns=['Date']).pct_change()
-        return_df.dropna(inplace=True)
-
-        return return_df
-    
-
-    def get_state(self, start, length) -> pd.DataFrame:
-        # if end exceeds the window
-        end = start + length - 1
-        end = min(end, len(self.returns) - 1)
-        return self.returns.iloc[start:end+1]  # iloc is integer-based indexing
+    def get_prices(self, end, lookback) -> pd.DataFrame:
+        assert lookback <= end
+        return self.prices.iloc[end-lookback:end] 
