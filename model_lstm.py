@@ -131,19 +131,26 @@ if __name__ == '__main__':
 
   filtered_data = filtered_data.drop(columns=['Date'])
   holding_period = int(0.2 * len(filtered_data))
-  model_results,_,_,_ = main(filtered_data,holding_period)
-  print(model_results)
+  model_results,rsme, _, _ = main(filtered_data,holding_period)
+  # print(model_results)
+  print(rsme)
 
+  rsme.to_csv("rsme_results")
   # Number of stocks
   num_stocks = len(model_results)
 
-  # Create a figure with subplots
-  fig, axes = plt.subplots(nrows=num_stocks, ncols=1, figsize=(10, num_stocks * 4))
-  fig.tight_layout(pad=5.0)
+
+  num_stocks = len(model_results)
+  num_cols = 2
+  num_rows = math.ceil(num_stocks / num_cols)
+
+  # Create subplots with the calculated rows and columns
+  fig, axes = plt.subplots(num_rows, num_cols, figsize=(12, num_rows * 4))
+  axes = axes.flatten()  # Flatten the axes array for easy indexing
 
   # Plot each stock's actual and predicted prices in a subplot
   for i, (stock, data) in enumerate(model_results.items()):
-      ax = axes[i] if num_stocks > 1 else axes  # Handle single subplot case
+      ax = axes[i]  # Get the current subplot
       ax.plot(data['actual_test_price'], label=f"{stock} Actual Price", linestyle='--')
       ax.plot(data['pred_test_price'], label=f"{stock} Predicted Price", linestyle='-')
       ax.set_title(f"{stock} Price Prediction (2021-2022)")
@@ -151,8 +158,14 @@ if __name__ == '__main__':
       ax.set_ylabel('Price in $')
       ax.legend()
 
+  # Hide any unused subplots
+  for j in range(len(axes)):
+      if j >= num_stocks:
+          axes[j].axis('off')
+
+  plt.tight_layout()
   # Show the plot
-  plt.show()
+  plt.savefig('stock_predictions.png', dpi=300, bbox_inches='tight')
 '''
   plt.plot(actual_test_price, label="Actual Price",linestyle='--') 
   plt.plot(pred_test_price,label="Predicted Price",linestyle='-')
