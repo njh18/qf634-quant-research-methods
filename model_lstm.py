@@ -128,7 +128,9 @@ if __name__ == '__main__':
       & (data['Date'] < '2022-12-31')]
 
   filtered_data = filtered_data.dropna()
-
+  # Subset for analysis (e.g., only the 'XLY' column)
+  subset_columns = ['XRP-USD']  # Specify the column(s) you want to analyze
+  filtered_data = filtered_data[['Date'] + subset_columns]  # Keep 'Date' if needed for debugging
   filtered_data = filtered_data.drop(columns=['Date'])
   holding_period = int(0.2 * len(filtered_data))
   model_results,rsme, _, _ = main(filtered_data,holding_period)
