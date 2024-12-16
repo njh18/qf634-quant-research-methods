@@ -141,11 +141,11 @@ if __name__ == '__main__':
 
 
   num_stocks = len(model_results)
-  num_cols = 2
+  num_cols = 4
   num_rows = math.ceil(num_stocks / num_cols)
 
   # Create subplots with the calculated rows and columns
-  fig, axes = plt.subplots(num_rows, num_cols, figsize=(12, num_rows * 4))
+  fig, axes = plt.subplots(num_rows, num_cols, figsize=(16, num_rows * 4))
   axes = axes.flatten()  # Flatten the axes array for easy indexing
 
   # Plot each stock's actual and predicted prices in a subplot
