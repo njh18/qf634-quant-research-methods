@@ -1,1 +1,184 @@
+import pandas as pd
+import numpy as np
+import math
+from datetime import datetime
+
+# -------------------------------
+# Constants for the swap
+NOTIONAL = 100e6       # $100 million
+R_SWAP   = 0.042       # 4.2% fixed rate
+
+# -------------------------------
+# Functions for swap pricing & sensitivities
+# We assume annual pay for 10 years.
+# Discount factors: D_i = exp(-z_i * i) for i = 1,...,10.
+def compute_discount_factors(z_vec):
+    """
+    Given a vector of 10 zero rates for maturities 1Y,...,10Y,
+    returns a list of discount factors [D_1, D_2, ..., D_10].
+    """
+    tenors = np.arange(1, 11)  # [1,2,...,10]
+    D = [np.exp(-z * t) for z, t in zip(z_vec, tenors)]
+    return D
+
+def price_swap_full(z_vec, notional=NOTIONAL, R_swap=R_SWAP):
+    """
+    Full revaluation of the payer swap using:
+      PV = Notional * [ (1 - D_10) - R_swap * sum_{i=1}^{10} D_i ]
+    where D_i = exp(-z_i * i) for i=1,...,10.
+    z_vec: list of 10 zero rates (for maturities 1Y,...,10Y).
+    """
+    D = compute_discount_factors(z_vec)
+    float_leg = 1 - D[-1]   # D_10 is the last element
+    fixed_leg = R_swap * sum(D)
+    pv = notional * (float_leg - fixed_leg)
+    return pv
+
+def swap_sensitivities(z_vec, notional=NOTIONAL, R_swap=R_SWAP):
+    """
+    Computes the partial derivatives of the swap PV with respect to each zero rate.
+    For i = 1,...,9: dPV/dz_i = - notional * R_swap * i * exp(-z_i * i)
+    For i = 10: dPV/dz_10 = notional * [10*exp(-z_10*10) - R_swap*10*exp(-z_10*10)]
+    Returns a list of 10 sensitivities.
+    """
+    tenors = np.arange(1, 11)
+    D = compute_discount_factors(z_vec)
+    sens = []
+    for i, t in enumerate(tenors):
+        if i == 9:  # i=10 (index 9)
+            dPV_dz = notional * (t * D[i] - R_swap * t * D[i])
+        else:
+            dPV_dz = - notional * (R_swap * t * D[i])
+        sens.append(dPV_dz)
+    return sens
+
+# -------------------------------
+# 1. Read SOFR Curve Data (SofrCurve.xlsx)
+# Assume file format: columns = [Tenor, T, 20221031, 20221101, ..., 20231030]
+df_sofr_raw = pd.read_excel("SofrCurve.xlsx")
+# Melt from wide to long:
+df_sofr_melt = df_sofr_raw.melt(id_vars=["Tenor", "T"], var_name="DateStr", value_name="ZeroRate")
+df_sofr_melt["Date"] = pd.to_datetime(df_sofr_melt["DateStr"], format="%Y%m%d")
+# Pivot so that each row is one date and columns are Tenor values (e.g., "1Y", "2Y", ..., "10Y")
+df_sofr_hist = df_sofr_melt.pivot(index="Date", columns="Tenor", values="ZeroRate")
+df_sofr_hist.sort_index(inplace=True)
+# Keep only the tenors we need:
+tenor_list = [f"{i}Y" for i in range(1, 11)]
+df_sofr_hist = df_sofr_hist[tenor_list]
+
+# -------------------------------
+# 2. Read Stock Data (AAPL, MSFT, F, BAC)
+# Assume each Excel file has columns: Date, Adj Close.
+def read_stock(file):
+    df = pd.read_excel(file, parse_dates=["Date"])
+    df.set_index("Date", inplace=True)
+    df.sort_index(inplace=True)
+    return df["Adj Close"]
+
+df_aapl = read_stock("AAPL.xlsx")
+df_msft = read_stock("MSFT.xlsx")
+df_f    = read_stock("F.xlsx")
+df_bac  = read_stock("BAC.xlsx")
+
+# Combine stock data into one DataFrame; columns: AAPL, MSFT, F, BAC
+df_stocks = pd.DataFrame({
+    "AAPL": df_aapl,
+    "MSFT": df_msft,
+    "F": df_f,
+    "BAC": df_bac
+})
+df_stocks.dropna(inplace=True)
+
+# -------------------------------
+# 3. Align Data: Use only common dates
+common_dates = df_sofr_hist.index.intersection(df_stocks.index)
+df_sofr_hist = df_sofr_hist.loc[common_dates]
+df_stocks = df_stocks.loc[common_dates]
+
+# -------------------------------
+# 4. Define “Current” as of 30/10/2023
+current_date = pd.to_datetime("2023-10-30")
+# Current zero rates for maturities 1Y,...,10Y:
+z_current = df_sofr_hist.loc[current_date].values.tolist()
+current_swap_val = price_swap_full(z_current)
+# For stocks, assume each position is $1M.
+p_aapl0 = df_stocks.loc[current_date, "AAPL"]
+p_msft0 = df_stocks.loc[current_date, "MSFT"]
+p_f0    = df_stocks.loc[current_date, "F"]
+p_bac0  = df_stocks.loc[current_date, "BAC"]
+
+n_aapl = 1e6 / p_aapl0
+n_msft = 1e6 / p_msft0
+n_f    = 1e6 / p_f0
+n_bac  = 1e6 / p_bac0
+current_stocks_val = 1e6 * 4  # total $4M in stocks
+current_port_val = current_swap_val + current_stocks_val
+
+# -------------------------------
+# 5. Compute Historical Daily Changes (1-day)
+# For stocks, compute daily returns; for the swap, compute daily changes in zero rates.
+stock_returns = df_stocks.pct_change().dropna()  # daily returns
+df_zero_change = df_sofr_hist.diff().dropna()      # daily zero rate changes
+
+# Align dates:
+common_dates2 = stock_returns.index.intersection(df_zero_change.index)
+stock_returns = stock_returns.loc[common_dates2]
+df_zero_change = df_zero_change.loc[common_dates2]
+
+# -------------------------------
+# 6. Build 1-day P&L Scenarios (Historical)
+# For each day, we compute:
+#  (a) Stock P&L = sum_{stock} [ (number of shares) * (current price) * (daily return) ]
+#  (b) Swap Full Revaluation:
+#      • Scenario zero rates = current zero rates + (daily change) for each tenor.
+#      • New swap value = price_swap_full(scenario_z).
+#      • Swap P&L = new swap value - current_swap_val.
+#  (c) Swap Sensitivity-Based:
+#      • Precompute current sensitivities dv = swap_sensitivities(z_current).
+#      • Swap P&L ≈ sum_{i=1}^{10} [ dv[i] * (daily zero rate change for tenor i) ].
+#  Portfolio P&L = Swap P&L + Stock P&L.
+fullreval_pnl_1d = []
+sensi_pnl_1d = []
+
+# Precompute swap sensitivities at current market:
+dv_current = swap_sensitivities(z_current)
+
+# Loop over each day (each daily change)
+for date in stock_returns.index:
+    # (a) Stocks:
+    r_aapl = stock_returns.loc[date, "AAPL"]
+    r_msft = stock_returns.loc[date, "MSFT"]
+    r_f    = stock_returns.loc[date, "F"]
+    r_bac  = stock_returns.loc[date, "BAC"]
+    pnl_stocks = n_aapl * p_aapl0 * r_aapl + n_msft * p_msft0 * r_msft + n_f * p_f0 * r_f + n_bac * p_bac0 * r_bac
+
+    # (b) Swap Full Revaluation:
+    delta_z = df_zero_change.loc[date].values.tolist()  # daily zero rate changes for each tenor ("1Y", "2Y",..., "10Y")
+    scenario_z = [ z_current[j] + delta_z[j] for j in range(10) ]
+    scenario_swap_val = price_swap_full(scenario_z)
+    pnl_swap_full = scenario_swap_val - current_swap_val
+
+    port_pnl_full = pnl_stocks + pnl_swap_full
+    fullreval_pnl_1d.append(port_pnl_full)
+
+    # (c) Swap Sensitivity-Based:
+    pnl_swap_sensi = sum( dv_current[j] * delta_z[j] for j in range(10) )
+    port_pnl_sensi = pnl_stocks + pnl_swap_sensi
+    sensi_pnl_1d.append(port_pnl_sensi)
+
+# -------------------------------
+# 7. Compute 1-day 95% VaR (Historical)
+# For a 95% confidence level, we take the 5th percentile of the daily P&L distribution,
+# then express VaR as a positive loss.
+var1d_full = -np.percentile(fullreval_pnl_1d, 5)
+var1d_sensi = -np.percentile(sensi_pnl_1d, 5)
+
+print("Historical 1-day VaR (95% Confidence):")
+print(f"  Full Revaluation Approach:   VaR = ${var1d_full:,.0f}")
+print(f"  Sensitivity-Based Approach:  VaR = ${var1d_sensi:,.0f}")
+
+Historical 1-day VaR (95% Confidence):
+  Full Revaluation Approach:   VaR = $986,112
+  Sensitivity-Based Approach:  VaR = $542,900
+
 
